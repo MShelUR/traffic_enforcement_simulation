@@ -1,5 +1,6 @@
 # built-ins
 from math import radians, cos, sin
+from pathlib import Path
 import tkinter as tk
 import time
 
@@ -134,10 +135,18 @@ class Car:
 
 
         # redraw polygon
+        # [(int(point_x), int(point_y)) for point_x, point_y in self.points]
         canvas.coords(self.id, self.points)
+
+############################
+# wall handling
+############################
+
+walls = []
 
 class Wall:
     global canvas
+    global walls
     count = 0
 
     def __init__(self,points):
@@ -145,6 +154,46 @@ class Wall:
         self.id = "wall"+str(Wall.count)
         self.points = points
         self.tk_id = canvas.create_polygon(points, fill="white", outline="black", tags=self.id)
+        walls.append(self)
+
+wall_counter = 0
+def save_wall_points(points):
+    global wall_counter
+    # convert points to line delimited x,y coordinates
+    # save that as a new wall object
+    str_output = "\n".join([str(point[0])+", "+str(point[1]) for point in points])
+    with open(f"map/built/wall_{wall_counter}","w") as out_file:
+        out_file.write(str_output)
+    print(f"saved new wall to: map/built/wall_{wall_counter}")
+    wall_counter += 1
+
+def load_wall_from_file(wall_file):
+    # load wall from file
+    # update wall_counter if saving a new wall would cause an overwrite
+    global wall_counter
+    str_input = ""
+    with open(wall_file,"r") as in_file:
+        str_input = in_file.read()
+    wall_input = [(float(point.split(", ")[0]),float(point.split(", ")[1])) for point in str_input.split("\n")]
+    Wall(wall_input)
+
+    if "map/built/wall_" in wall_file and wall_file[-1].isnumeric(): # update wall counter
+        wall_counter = int(wall_file[-1])+1
+
+def load_all_walls_from_map(map_path):
+    # go through map folder recursively to load all walls
+    remaining_paths = [map_path]
+    while len(remaining_paths) > 0:
+        new_paths = []
+        for path in remaining_paths:
+            for item in Path(path).iterdir():
+                if item.is_file(): # is a geometry file, draw
+                    load_wall_from_file(path+"/"+item.name)
+                else: # is a path, append it
+                    new_paths.append(path+"/"+item.name)
+        remaining_paths = new_paths
+
+load_all_walls_from_map("map")
 
 ############################
 # input handling
@@ -177,6 +226,8 @@ root.bind("<KeyRelease>", on_key_release)
 
 wall_points = []
 temp_lines = []
+cur_mouse_pos = (0,0)
+temp_draw = None
 
 def on_mouse_click(event):
     global wall_points
@@ -190,12 +241,17 @@ def on_mouse_click(event):
         
         if magnitude(d_vector) < 10 and len(wall_points) >= 4:
             walls.append(Wall(wall_points))
+            save_wall_points(wall_points)
             wall_points = []
             for line in temp_lines:
                 canvas.delete(line)
             temp_lines = []
 
+def on_mouse_move(event):
+    global cur_mouse_pos
+    cur_mouse_pos = (event.x, event.y)
 
+root.bind('<Motion>', on_mouse_move)
 root.bind("<Button-1>", on_mouse_click)
 
 
@@ -208,12 +264,12 @@ car1 = Car((18,14),(100,100),90)
 wall1 = Wall([(200,40),(200,120),(220,120),(220,40)])
 
 cars = [car1]
-walls = [wall1]
 
 ms = 10 # milliseconds for each step of the simulation
 
 def main_loop():
     global start_time
+    global temp_draw
     continue_simulation = True # sentinel value for game loop
     # move player controlled car
     car1.step()
@@ -240,8 +296,14 @@ def main_loop():
     
     if continue_simulation:
         root.after(ms,main_loop)
-        print(time.perf_counter()-start_time)
+        #print(time.perf_counter()-start_time)
         start_time = time.perf_counter()
+
+    # show drawing
+    if len(wall_points) > 0:
+        if temp_draw:
+            canvas.delete(temp_draw)
+        temp_draw = canvas.create_line(wall_points[-1],cur_mouse_pos)
 main_loop()
 
 

@@ -1,0 +1,6 @@
+# python 3.13 venv
+.venv
+
+# geometry files
+map/city
+map/built/*
