@@ -5,7 +5,7 @@ import tkinter as tk
 import time
 
 # external libraries
-from shapely.geometry import Polygon
+from shapely.geometry import Polygon, Point
 
 ############################
 # tkinter setup
@@ -149,16 +149,30 @@ class Car:
 
 walls = []
 
+# set up pathfinding things
+PATHFIND_DEBUG = True # draw pathfinding paths
+PATHFIND_STEP = 10 # pixels for each step in pathfinding, more = faster calc but less accurate
+
+nav_mesh = Polygon([
+    (0,0),
+    (screen_width,0),
+    (screen_width,screen_height),
+    (0,screen_height)
+    ])
+
 class Wall:
     global canvas
     global walls
+    global nav_mesh
     count = 0
 
     def __init__(self,points):
+        global nav_mesh
         Wall.count += 1
         self.id = "wall"+str(Wall.count)
         self.points = points
         self.tk_id = canvas.create_polygon(points, fill="white", outline="black", tags=self.id)
+        nav_mesh = nav_mesh.difference(Polygon(points)) # take wall out of nav area
         walls.append(self)
 
 wall_counter = 0
@@ -267,9 +281,6 @@ make_roundabout(screen_center,400,200)
 # Driver
 ############################
 
-PATHFIND_DEBUG = True # draw pathfinding paths
-PATHFIND_STEP = 10 # pixels for each step in pathfinding, more = faster calc but less accurate
-
 class Driver:
     # drivers have:
     #   a car to control
@@ -374,6 +385,7 @@ ms = 10 # milliseconds for each step of the simulation
 def main_loop():
     global start_time
     global temp_draw
+    global nav_mesh
     continue_simulation = True # sentinel value for game loop
     # move player controlled car
     car1.step()
@@ -408,6 +420,8 @@ def main_loop():
         if temp_draw:
             canvas.delete(temp_draw)
         temp_draw = canvas.create_line(wall_points[-1],cur_mouse_pos)
+
+    print(nav_mesh.contains(Point(cur_mouse_pos)))
 main_loop()
 
 
