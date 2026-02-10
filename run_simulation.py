@@ -16,7 +16,12 @@ start_time = time.perf_counter()
 root = tk.Tk()
 root.title("Car Simulation")
 
-canvas = tk.Canvas(root, width=1440, height=1080, bg="white")
+screen_width = 1440
+screen_height = 1080
+
+screen_center = (screen_width/2,screen_height/2)
+
+canvas = tk.Canvas(root, width=screen_width, height=screen_height, bg="white")
 canvas.pack(fill=tk.BOTH, expand=True)
 
 ############################
@@ -196,6 +201,105 @@ def load_all_walls_from_map(map_path):
 load_all_walls_from_map("map")
 
 ############################
+# procedural structures
+############################
+
+def make_roundabout(center, center_radius, road_width):
+
+    # abbreviations so args are still descriptive
+    c = center
+    r = center_radius
+    w = road_width
+
+    # make the center of the roundabout
+    Wall([
+        (c[0]-r/2,c[1]-r/4),
+        (c[0]-r/4,c[1]-r/2),
+        (c[0]+r/4,c[1]-r/2),
+        (c[0]+r/2,c[1]-r/4),
+        (c[0]+r/2,c[1]+r/4),
+        (c[0]+r/4,c[1]+r/2),
+        (c[0]-r/4,c[1]+r/2),
+        (c[0]-r/2,c[1]+r/4),
+        ])
+
+    # make shoulders for lanes
+    # top left shoulder
+    Wall([
+        (0,0),
+        (c[0]-r/4,0),
+        (c[0]-r/4,c[1]-r/2-w),
+        (c[0]-r/2-w,c[1]-r/4),
+        [0,c[1]-r/4]
+    ])
+
+    # top right shoulder
+    Wall([
+        (screen_width,0),
+        (screen_width-c[0]+r/4,0),
+        (screen_width-c[0]+r/4,c[1]-r/2-w),
+        (screen_width-c[0]+r/2+w,c[1]-r/4),
+        [screen_width,c[1]-r/4]
+    ])
+
+    # bottom left shoulder
+    Wall([
+        (0,screen_height),
+        (c[0]-r/4,screen_height),
+        (c[0]-r/4,screen_height-c[1]+r/2+w),
+        (c[0]-r/2-w,screen_height-c[1]+r/4),
+        [0,screen_height-c[1]+r/4]
+    ])
+
+    # bottom right shoulder
+    Wall([
+        (screen_width,screen_height),
+        (screen_width-c[0]+r/4,screen_height),
+        (screen_width-c[0]+r/4,screen_height-c[1]+r/2+w),
+        (screen_width-c[0]+r/2+w,screen_height-c[1]+r/4),
+        [screen_width,screen_height-c[1]+r/4]
+    ])
+
+    
+make_roundabout(screen_center,400,200)
+
+############################
+# Driver
+############################
+
+PATHFIND_DEBUG = True # draw pathfinding paths
+PATHFIND_STEP = 10 # pixels for each step in pathfinding, more = faster calc but less accurate
+
+class Driver:
+    # drivers have:
+    #   a car to control
+    #   a perception of their car
+    #   a personality for driving
+    def __init__(self, car, perception=None, personality=None):
+        self.car = car
+        self.perception = perception
+        self.personality = personality
+
+    def set_goal_position(self, goal_position):
+        self.goal_position = goal_position
+
+    def scan_for_cars(self):
+        # look for other drivers
+        # returns a list of other cars and their state:
+        #   acceleration delta (coasting, braking, accelerating)
+        #   distance delta (approaching, driving away)
+        pass
+
+    def pathfind_to_point(self, point_of_interest):
+        # find a valid path to the desired point
+        current_point = self.car.position
+        
+
+        if PATHFIND_DEBUG: # draw path
+            pass
+
+
+############################
 # input handling
 ############################
 
@@ -259,9 +363,9 @@ root.bind("<Button-1>", on_mouse_click)
 # basic simulation
 ############################
 
-car1 = Car((18,14),(100,100),90)
+car1 = Car((18,14),(100,screen_center[1]),0)
 
-wall1 = Wall([(200,40),(200,120),(220,120),(220,40)])
+#wall1 = Wall([(200,40),(200,120),(220,120),(220,40)])
 
 cars = [car1]
 

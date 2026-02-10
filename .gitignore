@@ -4,3 +4,4 @@
 # geometry files
 map/city
 map/built/*
+map_storage/*
