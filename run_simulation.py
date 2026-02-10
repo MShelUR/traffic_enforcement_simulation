@@ -144,21 +144,77 @@ class Car:
         canvas.coords(self.id, self.points)
 
 ############################
-# wall handling
+# pathfinding
 ############################
 
-walls = []
 
 # set up pathfinding things
 PATHFIND_DEBUG = True # draw pathfinding paths
-PATHFIND_STEP = 10 # pixels for each step in pathfinding, more = faster calc but less accurate
-
 nav_mesh = Polygon([
     (0,0),
     (screen_width,0),
     (screen_width,screen_height),
     (0,screen_height)
     ])
+
+def get_point_distance(point,other):
+    # 2d magnitude
+    return ((point[0]-other[0])**2+(point[1]-other[1])**2)**.5
+
+def compute_a_star(current_point,other_point,goal_point):
+    # find relative value of a point
+
+    utility = get_point_distance(other_point,goal_point)
+    cost = get_point_distance(current_point,other_point)
+
+    return utility / cost
+
+def find_best_next_point(current_point,goal_point,others):
+    best_point = None
+    best_value = 0
+    for other in others:
+        new_value = compute_a_star(current_point,other,goal_point)
+        if new_value > best_value:
+            best_point = other
+            best_value = new_value
+    
+    return best_point
+
+def find_closest_point(point,others):
+    closest_point = others[0]
+    closest_dist = point_distance(point,closest_point)
+
+    for other in others[1:]: # check the rest
+        new_dist = point_distance(point,other)
+        if new_dist < closest_dist:
+            closest_dist = new_dist
+            closest_point = other
+    
+    return closest_point
+
+def pathfind_to_point(start,goal):
+    nav_exterior = list(nav_mesh.exterior.coords)
+    closest_start = find_closest_point(start,nav_exterior)
+    closest_end = find_closest_point(goal,nav_exterior)
+
+    path = [current_point]
+
+    current_point = closest_start
+    while current_point != closest_end:
+        current_point = find_best_next_point(current_point,goal_point,nav_exterior)
+        path.append(current_point)
+
+    return path
+
+
+
+
+############################
+# wall handling
+############################
+
+walls = []
+
 
 class Wall:
     global canvas
@@ -302,8 +358,12 @@ class Driver:
         pass
 
     def pathfind_to_point(self, point_of_interest):
+        global nav_mesh
         # find a valid path to the desired point
         current_point = self.car.position
+
+        path = find_path(current_point, self.goal_position)
+        nav_exteriors = list(nav_mesh.exterior.coords)
         
 
         if PATHFIND_DEBUG: # draw path
@@ -421,6 +481,7 @@ def main_loop():
             canvas.delete(temp_draw)
         temp_draw = canvas.create_line(wall_points[-1],cur_mouse_pos)
 
+    # see if mouse is in nav mesh
     print(nav_mesh.contains(Point(cur_mouse_pos)))
 main_loop()
 
