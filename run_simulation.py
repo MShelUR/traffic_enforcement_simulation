@@ -1,6 +1,7 @@
 # built-ins
-from math import radians, cos, sin
+from math import radians, degrees, cos, sin, atan2
 from pathlib import Path
+import random
 import tkinter as tk
 import time
 
@@ -71,8 +72,11 @@ def magnitude(vector):
 # the car
 ############################
 
+cars = []
+
 class Car:
     global canvas
+    global cars
     count = 0
 
     def __init__(self,size,pos,rot):
@@ -93,6 +97,8 @@ class Car:
         self.velocity = [0,0]
         self.acceleration = [0,0]
         self.steering_direction = 0
+
+        cars.append(self)
 
     def accelerate(self,dx,dy):
         self.acceleration[0] = dx
@@ -149,6 +155,10 @@ class Car:
 
 
 # set up pathfinding things
+
+# directed graph of valid points
+lanes = {}
+
 PATHFIND_DEBUG = True # draw pathfinding paths
 nav_mesh = Polygon([
     (0,0),
@@ -160,6 +170,9 @@ nav_mesh = Polygon([
 def get_point_distance(point,other):
     # 2d magnitude
     return ((point[0]-other[0])**2+(point[1]-other[1])**2)**.5
+
+def is_out_of_bounds(point):
+    return point[0] < 0 or point[0] > screen_width or point[1] < 0 or point[1] > screen_height
 
 def compute_a_star(current_point,other_point,goal_point):
     # find relative value of a point
@@ -182,10 +195,11 @@ def find_best_next_point(current_point,goal_point,others):
 
 def find_closest_point(point,others):
     closest_point = others[0]
-    closest_dist = point_distance(point,closest_point)
+    #print(point,others)
+    closest_dist = get_point_distance(point,closest_point)
 
     for other in others[1:]: # check the rest
-        new_dist = point_distance(point,other)
+        new_dist = get_point_distance(point,other)
         if new_dist < closest_dist:
             closest_dist = new_dist
             closest_point = other
@@ -206,8 +220,41 @@ def pathfind_to_point(start,goal):
 
     return path
 
+def find_closest_lane(point):
+    return find_closest_point(point, list(lanes))
+
+def draw_all_lanes():
+    for start_point in lanes:
+        end_points = lanes[start_point]
+        for end_point in end_points:
+            canvas.create_line(start_point[0],start_point[1], end_point[0],end_point[1], arrow=tk.LAST, fill='blue', width=2)
+
+def make_lane(start_point, end_point):
+    #print(start_point,end_point)
+    start_point = (int(start_point[0]), int(start_point[1]))
+    end_point = (int(end_point[0]), int(end_point[1]))
+    if not lanes.get(start_point):
+        lanes[start_point] = {}
+        if is_out_of_bounds(start_point):
+            map_entrances.append(start_point)
+
+    lanes[start_point][end_point] = get_point_distance(start_point,end_point)
+    if is_out_of_bounds(end_point):
+        map_exits.append(end_point)
 
 
+    return start_point, end_point
+
+map_entrances = []
+map_exits = []
+
+def set_random_route(driver):
+    start = random.choice(map_entrances)
+    end = random.choice(map_exits)
+
+    driver.set_position(start)
+    driver.set_goal_position(end)
+    
 
 ############################
 # wall handling
@@ -330,14 +377,40 @@ def make_roundabout(center, center_radius, road_width):
         [screen_width,screen_height-c[1]+r/4]
     ])
 
+    entrance_left = make_lane((-10,c[1]+r/8),(c[0]-r+w/4,c[1]+r/8))
+    entrance_right = make_lane((screen_width+10,c[1]-r/8),(c[0]+r-w/4,c[1]-r/8))
+    entrance_top = make_lane((c[0]-r/8,-10),(c[0]-r/8,c[1]-r+w/4))
+    entrance_bottom = make_lane((c[0]+r/8,screen_height+10),(c[0]+r/8,c[1]+r-w/4))
+
+    exit_left = make_lane((c[0]-r+w/4,c[1]-r/8),(-10,c[1]-r/8))
+    exit_right = make_lane((c[0]+r-w/4,c[1]+r/8),(screen_width+10,c[1]+r/8))
+    exit_top = make_lane((c[0]+r/8,c[1]-r+w/4),(c[0]+r/8,-10))
+    exit_bottom = make_lane((c[0]-r/8,c[1]+r-w/4),(c[0]-r/8,screen_height+10))
+    
+    roundabout_entrances = [entrance_left,entrance_top,entrance_right,entrance_bottom]
+    roundabout_exits = [exit_left,exit_top,exit_right,exit_bottom]
+
+    for i, r_exit in enumerate(roundabout_exits):
+        r_entrance = roundabout_entrances[i]
+        last_exit = roundabout_exits[i-1]
+
+        make_lane(r_exit[0],r_entrance[1])
+        make_lane(r_entrance[1],last_exit[0])
+
+
     
 make_roundabout(screen_center,400,200)
+
+draw_all_lanes()
 
 ############################
 # Driver
 ############################
 
+drivers = []
+
 class Driver:
+    global drivers
     # drivers have:
     #   a car to control
     #   a perception of their car
@@ -346,6 +419,16 @@ class Driver:
         self.car = car
         self.perception = perception
         self.personality = personality
+        self.next_point = None
+        self.goal_position = None
+        self.can_teleport = True # teleport for setup
+
+        self.route = []
+
+        drivers.append(self)
+
+    def set_position(self, position):
+        self.car.position = list(position)
 
     def set_goal_position(self, goal_position):
         self.goal_position = goal_position
@@ -368,6 +451,89 @@ class Driver:
 
         if PATHFIND_DEBUG: # draw path
             pass
+
+    def make_route_using_gps(self, point_of_interest):
+        current_point = self.car.position
+        closest_lane = find_closest_lane(current_point)
+        self.set_position(closest_lane)
+        self.set_goal_position(point_of_interest)
+            
+
+    def get_next_point(self):
+        current_point = self.car.position
+
+        
+        if self.next_point and get_point_distance(current_point,self.next_point) > 4:
+            return self.next_point
+        elif self.next_point == self.goal_position:
+            self.next_point = None
+            self.car.position = [99999999999999999999,999999999999999999999999]
+            new_car = Car((18,14),(100,screen_center[1]),0)
+            new_driver = Driver(new_car)
+            set_random_route(new_driver)
+
+        closest_point = find_closest_lane(current_point)
+        options = lanes.get(closest_point)
+
+        if not options:
+            return # nowhere to go
+
+        if options.get(self.goal_position):
+            return self.goal_position
+
+        closest_dist = 9999999
+        for lane in lanes[closest_point]:
+            if not lanes.get(lane):
+                continue 
+            if lanes[lane].get(self.goal_position):
+                print("near exit!")
+                if closest_point == lane[0]: # near exit path, go to exit
+                    next_point = self.goal_position
+                else:
+                    next_point = lane # found exit path, go to it
+                return next_point # found exit, don't check others
+
+            lane_dist = get_point_distance(closest_point, lane)
+            if lane_dist < closest_dist:
+                closest_dist = lane_dist
+                next_point = lane
+
+        # didn't find exit, return closest next position
+
+        return next_point
+            
+    def look_at(self,target_point):
+        current_rotation = self.car.rot
+        start_point = self.car.position
+        
+        # desired angle is the arctangent
+        desired_angle = atan2(target_point[1]-start_point[1], target_point[0]-start_point[0])
+
+        desired_degrees = degrees(desired_angle)
+
+        angle_delta = desired_degrees-self.car.rot
+
+        if self.can_teleport:
+            self.car.rot = desired_degrees
+        else:
+            self.car.steer(min(max(angle_delta,-1),1))
+
+        #self.can_teleport = False
+
+    def drive_towards(self,target_point):
+        self.car.accelerate(.25,0)
+
+
+    def step(self):
+        if self.goal_position:
+            next_point = self.get_next_point()
+            #print(next_point)
+
+            self.next_point = next_point
+            
+            self.look_at(next_point)
+            self.drive_towards(next_point)
+
 
 
 ############################
@@ -435,12 +601,19 @@ root.bind("<Button-1>", on_mouse_click)
 ############################
 
 car1 = Car((18,14),(100,screen_center[1]),0)
+car2 = Car((18,14),(100,screen_center[1]),0)
+
+npc_driver = Driver(car2)
+set_random_route(npc_driver)
+
+
 
 #wall1 = Wall([(200,40),(200,120),(220,120),(220,40)])
 
-cars = [car1]
 
 ms = 10 # milliseconds for each step of the simulation
+
+CHECKING_COLLISIONS = True
 
 def main_loop():
     global start_time
@@ -448,7 +621,12 @@ def main_loop():
     global nav_mesh
     continue_simulation = True # sentinel value for game loop
     # move player controlled car
-    car1.step()
+    for driver in drivers:
+        driver.step()
+    for car in cars:
+        car.step()
+
+    
     if keys_held["w"]:
         car1.accelerate(.5,0)
     if keys_held["s"]:
@@ -459,16 +637,17 @@ def main_loop():
         car1.steer(1)
     
     # check for collisions
-    for car in cars:
-        collided = False
-        for wall in walls:
-            if is_intersecting(car, wall):
-                collided = True
-        if collided:
-            canvas.itemconfig(car.tk_id, fill="red")
-            continue_simulation = False
-        else:
-            canvas.itemconfig(car.tk_id, fill="black")
+    if CHECKING_COLLISIONS:
+        for car in cars:
+            collided = False
+            for wall in walls:
+                if is_intersecting(car, wall):
+                    collided = True
+            if collided:
+                canvas.itemconfig(car.tk_id, fill="red")
+                continue_simulation = False
+            else:
+                canvas.itemconfig(car.tk_id, fill="black")
     
     if continue_simulation:
         root.after(ms,main_loop)
@@ -482,7 +661,7 @@ def main_loop():
         temp_draw = canvas.create_line(wall_points[-1],cur_mouse_pos)
 
     # see if mouse is in nav mesh
-    print(nav_mesh.contains(Point(cur_mouse_pos)))
+    # print(nav_mesh.contains(Point(cur_mouse_pos)))
 main_loop()
 
 
